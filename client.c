@@ -156,7 +156,7 @@ int main(int argc, char const *argv[]){
 	pthread_mutex_init(&lock, NULL);
 	pthread_create(&thread_id, NULL, checkIDLE, (void*)NULL);
 	if(argc==4) nexus(argv);
-	else printf("Format: %s <username> <server> <port>\n", argv[0]);
+	else{printf("Format: %s <username> <server> <port>\n", argv[0]); return 1;}
 	pthread_mutex_destroy(&lock);
 	pthread_join(thread_id, NULL);
 	return 0;
