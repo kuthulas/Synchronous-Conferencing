@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS=-Wall -lpthread
+CFLAGS=-Wall -pthread
 all: server client
  server: server.c SBCP.h
 		$(CC) $(CFLAGS) server.c -o server
