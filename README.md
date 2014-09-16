@@ -8,7 +8,7 @@ ECEN602 HW1 Programming Assignment
 
 Team Number: 31
 Member 1 # Thulasiraman, Kumaran (UIN: 223003944)
-Member 2 # LastName, FirstName (UIN: xxxxxxxxx)
+Member 2 # Manjunath, Jnanesh (UIN: 322005490)
 ---------------------------------------
 
 Description/Comments:
