@@ -9,6 +9,7 @@
 #include <time.h>
 #include <pthread.h>
 #include "SBCP.h"
+#include "common.c"
 
 int root;
 int gotack = 0, blink = 1;

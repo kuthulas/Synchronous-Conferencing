@@ -10,12 +10,12 @@ enum c_type {UNICAST, MULTICAST};
 struct SBCPH{
     unsigned int vrsn:9;
     unsigned int type:7;
-    int length:16;
+    unsigned int length:16;
 };
 
 struct SBCPA{
-    int type:16;
-    int length:16;
+    unsigned int type:16;
+    unsigned int length:16;
     char payload[512];
 };
 

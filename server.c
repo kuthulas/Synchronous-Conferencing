@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "SBCP.h"
+#include "common.c"
 
 int root, nclients=0, mclients, fdmax;
 char buffer[512];
@@ -52,13 +53,15 @@ void cleanup(int branch){
 }
 
 void msgplex(int branch, struct SBCPM message, enum c_type code){
-	if(code==UNICAST) write(branch,(void *) &message,sizeof(message));
+	char abuffer[1024];
+	codec(message, abuffer, NULL, 0);
+	if(code==UNICAST) write(branch,abuffer,strlen(abuffer));
 	else{
 		int c;
 		for(c = 0; c <= fdmax; c++) {
 			if (FD_ISSET(c, &tree)) {
 				if (c != root && c != branch){
-					if ((write(c,(void *) &message,sizeof(message))) == -1){
+					if ((write(c,abuffer,strlen(abuffer))) == -1){
 						printf("msgplex failed\n");
 					}
 				}
@@ -124,9 +127,13 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 
 	attribute[0].length = strlen(attribute[0].payload);
 	attribute[1].length = strlen(attribute[1].payload);
+
 	message.header = header;
 	message.attribute[0] = attribute[0];
 	message.attribute[1] = attribute[1];
+
+	//unsigned short int* ptr = (unsigned short int*)&message.header; 
+	//if(type==ACK)  printf("%x\n", *ptr);
 
 	msgplex(branch, message, code);
 
@@ -185,6 +192,8 @@ int main(int argc, char const *argv[]){
 					}
 					else{
 						if((gold=read(c,(struct SBCPM *) &message,sizeof(message)))>0){
+							char abuffer[1024];
+							codec(message, abuffer, (char *)&message, 1);
 							if(message.header.type == JOIN) handshake(c,message);
 							else if(message.header.type == SEND) {
 								strcpy(buffer, message.attribute[0].payload);
