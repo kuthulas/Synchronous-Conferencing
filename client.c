@@ -79,10 +79,10 @@ void dispatch(int branch, enum m_type type, char const *tag){
 		default:
 		break;
 	}
-	attribute.length = strlen(attribute.payload);
+	attribute.length = 4+strlen(attribute.payload);
 	message.header = header;
 	message.attribute[0] = attribute;
-	message.header.length = sizeof(attribute);
+	message.header.length = 4+attribute.length;
 	write(branch,(void *) &message,sizeof(message));
 	// if(patchback(branch) == 1) close(branch);
 }
