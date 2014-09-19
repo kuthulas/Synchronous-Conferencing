@@ -5,17 +5,17 @@ enum m_type {ACK=7,NAK=5,ONLINE=8,OFFLINE=6,IDLE=9,FWD=3,JOIN=2,SEND=4};
 enum a_type {USERNAME=2,MESSAGE=4,REASON=1,COUNT=3};
 enum c_type {UNICAST, MULTICAST};
 
-#define IDLETIME 10000000
+#define IDLETIME 10000000 // 10 secs
 
 struct SBCPH{
     unsigned int vrsn:9;
     unsigned int type:7;
-    unsigned int length:16;
+    int length:16;
 };
 
 struct SBCPA{
-    unsigned int type:16;
-    unsigned int length:16;
+    int type:16;
+    int length:16;
     char payload[512];
 };
 

@@ -7,12 +7,96 @@
 #include <string.h>
 #include <unistd.h>
 #include "SBCP.h"
-#include "common.c"
+#include <inttypes.h>
 
 int root, nclients=0, mclients, fdmax;
 char buffer[512];
 fd_set tree;
 struct client *clients;
+
+void encode(struct SBCPM message, char *ptr){
+	uint16_t host,network;
+	
+	memcpy((char *)&host, (char *)(&message.header), 2);
+	//printf("D:%" PRIu16 "\n", (uint16_t)host);
+	network = htons(host);
+	//printf("DD:%" PRIu16 "\n", (uint16_t)network);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+
+	memcpy((char *)&host, (char *)(&message.header)+2, 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+
+	memcpy((char *)&host, (char *)(&message.attribute[0]), 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy((char *)&host, (char *)(&message.attribute[0])+2, 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy(ptr, (char *)(&message.attribute[0].payload), strlen(message.attribute[0].payload));
+	ptr += strlen(message.attribute[0].payload);
+	
+	memcpy((char *)&host, (char *)(&message.attribute[1]), 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy((char *)&host, (char *)(&message.attribute[1])+2, 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy(ptr, (char *)(&message.attribute[1].payload), strlen(message.attribute[1].payload));
+	ptr += strlen(message.attribute[1].payload);
+}
+
+void decode(struct SBCPM *message, char abuffer[]){
+	uint16_t host,network;
+	char *ptr = &abuffer[0];
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->header.vrsn = host & 0x01ff;
+	message->header.type = (host & 0xfe00) >> 9;
+	ptr += 2;
+	
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->header.length = host;
+	ptr += 2;
+	
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[0].type = host;
+	ptr += 2;
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[0].length = host;
+	ptr += 2;
+
+	memcpy(message->attribute[0].payload, ptr, message->attribute[0].length);
+	ptr += message->attribute[0].length;
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[1].type = host;
+	ptr += 2;
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[1].length = host;
+	ptr += 2;
+
+	memcpy(message->attribute[1].payload, ptr, message->attribute[1].length);
+	ptr += message->attribute[1].length;
+}
 
 void nexus(char const *target[]){
 	struct sockaddr_in rootaddr;
@@ -53,15 +137,16 @@ void cleanup(int branch){
 }
 
 void msgplex(int branch, struct SBCPM message, enum c_type code){
-	char abuffer[1024];
-	codec(message, abuffer, NULL, 0);
-	if(code==UNICAST) write(branch,abuffer,strlen(abuffer));
+	char abuffer[2048];
+	encode(message,&abuffer[0]);
+
+	if(code==UNICAST) write(branch,abuffer,strlen(message.attribute[0].payload)+strlen(message.attribute[1].payload)+12);
 	else{
 		int c;
 		for(c = 0; c <= fdmax; c++) {
 			if (FD_ISSET(c, &tree)) {
 				if (c != root && c != branch){
-					if ((write(c,abuffer,strlen(abuffer))) == -1){
+					if ((write(c,abuffer,strlen(message.attribute[0].payload)+strlen(message.attribute[1].payload)+12)) == -1){
 						printf("msgplex failed\n");
 					}
 				}
@@ -76,6 +161,7 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 	struct SBCPA attribute[2];
 	header.vrsn = 3;	
 	int i;
+
 	switch (type) {
 		case ACK:
 		header.type = ACK;
@@ -127,13 +213,10 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 
 	attribute[0].length = strlen(attribute[0].payload);
 	attribute[1].length = strlen(attribute[1].payload);
-
 	message.header = header;
+	message.header.length = sizeof attribute;
 	message.attribute[0] = attribute[0];
 	message.attribute[1] = attribute[1];
-
-	//unsigned short int* ptr = (unsigned short int*)&message.header; 
-	//if(type==ACK)  printf("%x\n", *ptr);
 
 	msgplex(branch, message, code);
 
@@ -182,6 +265,8 @@ int main(int argc, char const *argv[]){
 			}
 
 			for(c=0;c<=fdmax;c++){
+				char abuffer[2048];
+				memset(&message, 0, sizeof(message));
 				if(FD_ISSET(c, &reads)){
 					if(c==root){
 						socklen_t len = sizeof address;
@@ -191,9 +276,8 @@ int main(int argc, char const *argv[]){
 						}
 					}
 					else{
-						if((gold=read(c,(struct SBCPM *) &message,sizeof(message)))>0){
-							char abuffer[1024];
-							codec(message, abuffer, (char *)&message, 1);
+						if((gold=read(c,abuffer,2048))>0){
+							decode(&message,abuffer);
 							if(message.header.type == JOIN) handshake(c,message);
 							else if(message.header.type == SEND) {
 								strcpy(buffer, message.attribute[0].payload);

@@ -9,7 +9,7 @@
 #include <time.h>
 #include <pthread.h>
 #include "SBCP.h"
-#include "common.c"
+#include <inttypes.h>
 
 int root;
 int gotack = 0, blink = 1;
@@ -17,15 +17,103 @@ pthread_t  thread_id;
 pthread_mutex_t lock;
 clock_t tstart;
 
+void encode(struct SBCPM message, char *ptr){
+	uint16_t host,network;
+	
+	memcpy((char *)&host, (char *)(&message.header), 2);
+	//printf("%" PRIu16 "\n", (uint16_t)host);
+	network = htons(host);
+	//printf("%" PRIu16 "\n", (uint16_t)network);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+
+	memcpy((char *)&host, (char *)(&message.header)+2, 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+
+	memcpy((char *)&host, (char *)(&message.attribute[0]), 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy((char *)&host, (char *)(&message.attribute[0])+2, 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy(ptr, (char *)(&message.attribute[0].payload), strlen(message.attribute[0].payload));
+	ptr += strlen(message.attribute[0].payload);
+	
+	memcpy((char *)&host, (char *)(&message.attribute[1]), 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy((char *)&host, (char *)(&message.attribute[1])+2, 2);
+	network = htons(host);
+	memcpy(ptr, (const char *)&network,2);
+	ptr += 2;
+	
+	memcpy(ptr, (char *)(&message.attribute[1].payload), strlen(message.attribute[1].payload));
+	ptr += strlen(message.attribute[1].payload);
+}
+
+
+void decode(struct SBCPM *message, char abuffer[]){
+	uint16_t host,network;
+	char *ptr = &abuffer[0];
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->header.vrsn = host & 0x01ff;
+	message->header.type = (host & 0xfe00) >> 9;
+	ptr += 2;
+	
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->header.length = host;
+	ptr += 2;
+	
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[0].type = host;
+	ptr += 2;
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[0].length = host;
+	ptr += 2;
+
+	memcpy(message->attribute[0].payload, ptr, message->attribute[0].length);
+	ptr += message->attribute[0].length;
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[1].type = host;
+	ptr += 2;
+
+	memcpy((char *)&network, (char *)ptr, 2);
+	host = ntohs(network);
+	message->attribute[1].length = host;
+	ptr += 2;
+
+	memcpy(message->attribute[1].payload, ptr, message->attribute[1].length);
+	ptr += message->attribute[1].length;
+}
+
 int patchback(int branch){
+	char abuffer[2048];
 	struct SBCPM message;
+	memset(&message, 0, sizeof(message));
 	char *one = "1";
 	char *two = "2";
-	if(read(branch,(struct SBCPM *) &message,sizeof(message))<=0){
+	if(read(branch,abuffer,2048)<=0){
 		printf("Disconnected!\n");
 		return 1;
 	}
 	else{
+		decode(&message,abuffer);
 		switch(message.header.type){
 			case ACK:
 			printf("        [Members online(%s): %s]\n\nYou: ",message.attribute[1].payload, message.attribute[0].payload);
@@ -59,19 +147,20 @@ int patchback(int branch){
 void dispatch(int branch, enum m_type type, char const *tag){
 	struct SBCPM message;
 	struct SBCPH header;
-	struct SBCPA attribute;
+	struct SBCPA attribute[2];
+	char abuffer[2048];
 	header.vrsn = 3;
 
 	switch (type) {
 		case JOIN:
 		header.type = JOIN;
-		attribute.type = USERNAME;
-		strcpy(attribute.payload, tag);
+		attribute[0].type = USERNAME;
+		strcpy(attribute[0].payload, tag);
 		break;
 		case SEND:
 		header.type = SEND;
-		attribute.type = MESSAGE;
-		strcpy(attribute.payload, tag);
+		attribute[0].type = MESSAGE;
+		strcpy(attribute[0].payload, tag);
 		break;
 		case IDLE:
 		header.type = IDLE;
@@ -79,11 +168,22 @@ void dispatch(int branch, enum m_type type, char const *tag){
 		default:
 		break;
 	}
-	attribute.length = strlen(attribute.payload);
+<<<<<<< HEAD
+	attribute[0].length = strlen(attribute[0].payload);
+	attribute[1].length = 0;
+	message.header = header;
+	message.header.length = sizeof attribute;
+	message.attribute[0] = attribute[0];
+	message.attribute[1] = attribute[1];
+	encode(message,&abuffer[0]);
+	write(branch,abuffer,strlen(attribute[0].payload)+strlen(attribute[1].payload)+12);
+=======
+	attribute.length = 4+strlen(attribute.payload);
 	message.header = header;
 	message.attribute[0] = attribute;
-	message.header.length = sizeof(attribute);
+	message.header.length = 4+attribute.length;
 	write(branch,(void *) &message,sizeof(message));
+>>>>>>> FETCH_HEAD
 	// if(patchback(branch) == 1) close(branch);
 }
 
@@ -96,14 +196,20 @@ void nexus(char const *target[]){
 	FD_ZERO(&tree);
 	char message[512];
 
-	if((root = socket(AF_INET,SOCK_STREAM,0))==-1) exit(EXIT_FAILURE);
+	if((root = socket(AF_INET,SOCK_STREAM,0))==-1) {
+		printf("Connection failed\n");
+		exit(EXIT_FAILURE);
+	}
 	bzero(&rootaddr,sizeof(rootaddr));
 	rootaddr.sin_family=AF_INET;
 	myhost = gethostbyname(target[2]);
 	memcpy(&rootaddr.sin_addr.s_addr, myhost->h_addr,myhost->h_length);
 	rootaddr.sin_port = htons(atoi(target[3]));
 
-	if(connect(root,(struct sockaddr *)&rootaddr,sizeof(rootaddr))==-1) exit(EXIT_FAILURE);
+	if(connect(root,(struct sockaddr *)&rootaddr,sizeof(rootaddr))==-1){
+		printf("Connection failed\n");
+		exit(EXIT_FAILURE);
+	}
 	else{
 		printf("    [Welcome! Enter JOIN to participate]: ");
 		fflush(stdout);
@@ -128,7 +234,6 @@ void nexus(char const *target[]){
 					}
 					else if(joined==1) {
 						dispatch(root,SEND,message);
-						printf("You: ");
 						fflush(stdout);
 						tstart = clock();
 						blink = 1;
@@ -157,7 +262,7 @@ int main(int argc, char const *argv[]){
 	pthread_mutex_init(&lock, NULL);
 	pthread_create(&thread_id, NULL, checkIDLE, (void*)NULL);
 	if(argc==4) nexus(argv);
-	else{printf("Format: %s <username> <server> <port>\n", argv[0]); return 1;}
+	else printf("Format: %s <username> <server> <port>\n", argv[0]);
 	pthread_mutex_destroy(&lock);
 	pthread_join(thread_id, NULL);
 	return 0;
