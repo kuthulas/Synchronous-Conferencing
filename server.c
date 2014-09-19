@@ -15,88 +15,62 @@ fd_set tree;
 struct client *clients;
 
 void encode(struct SBCPM message, char *ptr){
-	uint16_t host,network;
+	uint32_t host,network;
 	
-	memcpy((char *)&host, (char *)(&message.header), 2);
-	//printf("D:%" PRIu16 "\n", (uint16_t)host);
-	network = htons(host);
-	//printf("DD:%" PRIu16 "\n", (uint16_t)network);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
+	memcpy((char *)&host, (char *)(&message.header), 4);
+	//printf("%" PRIu16 "\n", (uint16_t)host);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 
-	memcpy((char *)&host, (char *)(&message.header)+2, 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
-
-	memcpy((char *)&host, (char *)(&message.attribute[0]), 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
-	
-	memcpy((char *)&host, (char *)(&message.attribute[0])+2, 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
+	memcpy((char *)&host, (char *)(&message.attribute[0]), 4);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 	
 	memcpy(ptr, (char *)(&message.attribute[0].payload), strlen(message.attribute[0].payload));
 	ptr += strlen(message.attribute[0].payload);
 	
-	memcpy((char *)&host, (char *)(&message.attribute[1]), 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
-	
-	memcpy((char *)&host, (char *)(&message.attribute[1])+2, 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
+	memcpy((char *)&host, (char *)(&message.attribute[1]), 4);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 	
 	memcpy(ptr, (char *)(&message.attribute[1].payload), strlen(message.attribute[1].payload));
 	ptr += strlen(message.attribute[1].payload);
 }
 
+
 void decode(struct SBCPM *message, char abuffer[]){
-	uint16_t host,network;
+	uint32_t host,network;
 	char *ptr = &abuffer[0];
 
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->header.vrsn = host & 0x01ff;
-	message->header.type = (host & 0xfe00) >> 9;
-	ptr += 2;
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->header.vrsn = host & 0x000001ff;
+	message->header.type = (host & 0x0000fe00) >> 9;
+	message->header.length = (host & 0xffff0000) >> 16;
+	ptr += 4;
 	
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->header.length = host;
-	ptr += 2;
-	
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[0].type = host;
-	ptr += 2;
-
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[0].length = host;
-	ptr += 2;
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->attribute[0].type = host & 0x0000ffff;
+	message->attribute[0].length = (host & 0xffff0000) >> 16;
+	ptr += 4;
 
 	memcpy(message->attribute[0].payload, ptr, message->attribute[0].length);
 	ptr += message->attribute[0].length;
-
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[1].type = host;
-	ptr += 2;
-
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[1].length = host;
-	ptr += 2;
+	
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->attribute[1].type = host & 0x0000ffff;
+	message->attribute[1].length = (host & 0xffff0000) >> 16;
+	ptr += 4;
 
 	memcpy(message->attribute[1].payload, ptr, message->attribute[1].length);
 	ptr += message->attribute[1].length;
 }
+
 
 void nexus(char const *target[]){
 	struct sockaddr_in rootaddr;
@@ -167,15 +141,15 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 		header.type = ACK;
 		attribute[0].type = MESSAGE;
 		attribute[1].type = COUNT;
-		sprintf(attribute[1].payload,"%d", nclients);
-		if(nclients==1) strcpy(attribute[0].payload, "Just you!");
+		sprintf(attribute[0].payload,"%d", nclients);
+		if(nclients==1) strcpy(attribute[1].payload, "Just you!");
 		else {
 			int c;
-			strcpy(attribute[0].payload,"You,");
+			strcpy(attribute[1].payload,"You,");
 			for(c=0; c<nclients-1; c++){
-				strcat(attribute[0].payload,clients[c].name);
-				if(c!=nclients-2) strcat(attribute[0].payload, ",");
-				else strcat(attribute[0].payload, ".");
+				strcat(attribute[1].payload,clients[c].name);
+				if(c!=nclients-2) strcat(attribute[1].payload, ",");
+				else strcat(attribute[1].payload, ".");
 			}
 		}
 		break;
@@ -204,8 +178,8 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 		header.type = FWD;
 		attribute[0].type = MESSAGE;
 		attribute[1].type = USERNAME;
-		strcpy(attribute[0].payload,buffer);
-		for(i=0;i<nclients;i++) if(clients[i].fd==branch) strcpy(attribute[1].payload,clients[i].name);
+		strcpy(attribute[1].payload,buffer);
+		for(i=0;i<nclients;i++) if(clients[i].fd==branch) strcpy(attribute[0].payload,clients[i].name);
 			break;
 		default:
 		break;

@@ -15,45 +15,29 @@ int root;
 int gotack = 0, blink = 1;
 pthread_t  thread_id;
 pthread_mutex_t lock;
-clock_t tstart;
+clock_t tstart;	
 
 void encode(struct SBCPM message, char *ptr){
-	uint16_t host,network;
+	uint32_t host,network;
 	
-	memcpy((char *)&host, (char *)(&message.header), 2);
+	memcpy((char *)&host, (char *)(&message.header), 4);
 	//printf("%" PRIu16 "\n", (uint16_t)host);
-	network = htons(host);
-	//printf("%" PRIu16 "\n", (uint16_t)network);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 
-	memcpy((char *)&host, (char *)(&message.header)+2, 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
-
-	memcpy((char *)&host, (char *)(&message.attribute[0]), 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
-	
-	memcpy((char *)&host, (char *)(&message.attribute[0])+2, 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
+	memcpy((char *)&host, (char *)(&message.attribute[0]), 4);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 	
 	memcpy(ptr, (char *)(&message.attribute[0].payload), strlen(message.attribute[0].payload));
 	ptr += strlen(message.attribute[0].payload);
 	
-	memcpy((char *)&host, (char *)(&message.attribute[1]), 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
-	
-	memcpy((char *)&host, (char *)(&message.attribute[1])+2, 2);
-	network = htons(host);
-	memcpy(ptr, (const char *)&network,2);
-	ptr += 2;
+	memcpy((char *)&host, (char *)(&message.attribute[1]), 4);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 	
 	memcpy(ptr, (char *)(&message.attribute[1].payload), strlen(message.attribute[1].payload));
 	ptr += strlen(message.attribute[1].payload);
@@ -61,45 +45,34 @@ void encode(struct SBCPM message, char *ptr){
 
 
 void decode(struct SBCPM *message, char abuffer[]){
-	uint16_t host,network;
+	uint32_t host,network;
 	char *ptr = &abuffer[0];
 
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->header.vrsn = host & 0x01ff;
-	message->header.type = (host & 0xfe00) >> 9;
-	ptr += 2;
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->header.vrsn = host & 0x000001ff;
+	message->header.type = (host & 0x0000fe00) >> 9;
+	message->header.length = (host & 0xffff0000) >> 16;
+	ptr += 4;
 	
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->header.length = host;
-	ptr += 2;
-	
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[0].type = host;
-	ptr += 2;
-
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[0].length = host;
-	ptr += 2;
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->attribute[0].type = host & 0x0000ffff;
+	message->attribute[0].length = (host & 0xffff0000) >> 16;
+	ptr += 4;
 
 	memcpy(message->attribute[0].payload, ptr, message->attribute[0].length);
 	ptr += message->attribute[0].length;
 
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[1].type = host;
-	ptr += 2;
-
-	memcpy((char *)&network, (char *)ptr, 2);
-	host = ntohs(network);
-	message->attribute[1].length = host;
-	ptr += 2;
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->attribute[1].type = host & 0x0000ffff;
+	message->attribute[1].length = (host & 0xffff0000) >> 16;
+	ptr += 4;
 
 	memcpy(message->attribute[1].payload, ptr, message->attribute[1].length);
 	ptr += message->attribute[1].length;
+	printf("%s\n", message->attribute[1].payload);
 }
 
 int patchback(int branch){
@@ -116,7 +89,7 @@ int patchback(int branch){
 		decode(&message,abuffer);
 		switch(message.header.type){
 			case ACK:
-			printf("        [Members online(%s): %s]\n\nYou: ",message.attribute[1].payload, message.attribute[0].payload);
+			printf("        [Members online(%s): %s]\n\nYou: ",message.attribute[0].payload, message.attribute[1].payload);
 			tstart = clock();
 			gotack = 1;
 			break;
@@ -131,7 +104,7 @@ int patchback(int branch){
 			printf("\n    [OFFLINE: %s]\nYou: ",message.attribute[0].payload);
 			break;
 			case FWD:
-			printf("\n%s: %s\nYou: ",message.attribute[1].payload, message.attribute[0].payload);
+			printf("\n%s: %s\nYou: ",message.attribute[0].payload, message.attribute[1].payload);
 			break;
 			case IDLE:
 			printf("\n    [IDLE: %s]\nYou: ",message.attribute[0].payload);
@@ -148,6 +121,9 @@ void dispatch(int branch, enum m_type type, char const *tag){
 	struct SBCPM message;
 	struct SBCPH header;
 	struct SBCPA attribute[2];
+	memset(&message, 0, sizeof(message));
+	memset(&header, 0, sizeof(header));
+	memset(&attribute, 0, sizeof(attribute));
 	char abuffer[2048];
 	header.vrsn = 3;
 
@@ -171,11 +147,11 @@ void dispatch(int branch, enum m_type type, char const *tag){
 	attribute[0].length = strlen(attribute[0].payload);
 	attribute[1].length = 0;
 	message.header = header;
-	message.header.length = sizeof attribute;
+	message.header.length = sizeof(attribute)+4;
 	message.attribute[0] = attribute[0];
 	message.attribute[1] = attribute[1];
 	encode(message,&abuffer[0]);
-	write(branch,abuffer,strlen(attribute[0].payload)+strlen(attribute[1].payload)+12);
+	write(branch,abuffer,message.header.length);
 	// if(patchback(branch) == 1) close(branch);
 }
 
