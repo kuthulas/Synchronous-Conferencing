@@ -168,8 +168,6 @@ void dispatch(int branch, enum m_type type, char const *tag){
 		default:
 		break;
 	}
-<<<<<<< HEAD
-<<<<<<< HEAD
 	attribute[0].length = strlen(attribute[0].payload);
 	attribute[1].length = 0;
 	message.header = header;
@@ -178,15 +176,6 @@ void dispatch(int branch, enum m_type type, char const *tag){
 	message.attribute[1] = attribute[1];
 	encode(message,&abuffer[0]);
 	write(branch,abuffer,strlen(attribute[0].payload)+strlen(attribute[1].payload)+12);
-=======
-=======
->>>>>>> FETCH_HEAD
-	attribute.length = 4+strlen(attribute.payload);
-	message.header = header;
-	message.attribute[0] = attribute;
-	message.header.length = 4+attribute.length;
-	write(branch,(void *) &message,sizeof(message));
->>>>>>> FETCH_HEAD
 	// if(patchback(branch) == 1) close(branch);
 }
 
