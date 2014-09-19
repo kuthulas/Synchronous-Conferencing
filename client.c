@@ -72,7 +72,6 @@ void decode(struct SBCPM *message, char abuffer[]){
 
 	memcpy(message->attribute[1].payload, ptr, message->attribute[1].length);
 	ptr += message->attribute[1].length;
-	printf("%s\n", message->attribute[1].payload);
 }
 
 int patchback(int branch){
