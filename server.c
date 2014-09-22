@@ -14,6 +14,7 @@ char buffer[512];
 fd_set tree;
 struct client *clients;
 
+/* Function to convert SBCPM structure to character buffer */
 void encode(struct SBCPM message, char *ptr){
 	uint32_t host,network;
 	
@@ -41,6 +42,7 @@ void encode(struct SBCPM message, char *ptr){
 }
 
 
+/* Function to convert character buffer into SBCPM structure */
 void decode(struct SBCPM *message, char abuffer[]){
 	uint32_t host,network;
 	char *ptr = &abuffer[0];
@@ -71,8 +73,9 @@ void decode(struct SBCPM *message, char abuffer[]){
 	ptr += message->attribute[1].length;
 }
 
-
+/* Function to initialize and setup server socket to listen */
 void nexus(char const *target[]){
+/*
 	struct sockaddr_in rootaddr;
 	struct hostent* myhost;
 	if ((root = socket(AF_INET,SOCK_STREAM,0)) == -1) exit(EXIT_FAILURE);
@@ -84,8 +87,50 @@ void nexus(char const *target[]){
 	if((bind(root, (struct sockaddr*)&rootaddr, sizeof(rootaddr))) == -1) exit(EXIT_FAILURE);
 	if((listen(root, atoi(target[3])))==-1) exit(EXIT_FAILURE);
 	FD_SET(root, &tree);
+*/
+	//int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
+	struct addrinfo hints, *servinfo, *p;
+	//struct sockaddr_storage their_addr; // connector's address information
+	//socklen_t sin_size;
+	int rv, yes=1;
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE; // use my IP
+	if ((rv = getaddrinfo(target[1], target[2], &hints, &servinfo)) != 0) {
+	fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+	exit(EXIT_FAILURE);
+	}
+	// loop through all the results and bind to the first we can
+	for(p = servinfo; p != NULL; p = p->ai_next) {
+	if ((root = socket(p->ai_family, p->ai_socktype,p->ai_protocol)) == -1) {
+	perror("server: socket");
+	continue;
+	}
+	if (setsockopt(root, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+	perror("setsockopt");
+	exit(EXIT_FAILURE);
+	}
+	if (bind(root, p->ai_addr, p->ai_addrlen) == -1) {
+	close(root);
+	perror("server: bind");
+	continue;
+	}
+	break;
+	}
+	if (p == NULL) {
+	fprintf(stderr, "server: failed to bind\n");
+	exit(EXIT_FAILURE);
+	}
+	freeaddrinfo(servinfo); // all done with this structure
+	if (listen(root, atoi(target[3])) == -1) {
+	perror("listen");
+	exit(EXIT_FAILURE);
+	}
+	FD_SET(root, &tree);
 }
 
+/* Function to check if user with same name already exists */
 int userexists(char user[]){
 	int exists = 0;
 	int u;
@@ -98,6 +143,7 @@ int userexists(char user[]){
 	return exists;
 }
 
+/* Function to clear user info */
 void cleanup(int branch){
 	FD_CLR(branch,&tree);
 	int i,j;
@@ -110,6 +156,7 @@ void cleanup(int branch){
 	}
 }
 
+/* Function to send msg to intended recipients */
 void msgplex(int branch, struct SBCPM message, enum c_type code){
 	char abuffer[2048];
 	encode(message,&abuffer[0]);
@@ -129,6 +176,7 @@ void msgplex(int branch, struct SBCPM message, enum c_type code){
 	}
 }
 
+/* Function to populate message structure as per code and send message */
 void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 	struct SBCPM message;
 	struct SBCPH header;
@@ -200,6 +248,7 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 	}
 }
 
+/* Function to accept or reject new user */
 void handshake(int branch, struct SBCPM message){
 	struct SBCPA attribute = message.attribute[0];;
 	char user[16];
