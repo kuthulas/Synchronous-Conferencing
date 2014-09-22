@@ -17,6 +17,7 @@ pthread_t  thread_id;
 pthread_mutex_t lock;
 clock_t tstart;	
 
+/* Function to convert SBCPM structure to character buffer */
 void encode(struct SBCPM message, char *ptr){
 	uint32_t host,network;
 	
@@ -43,7 +44,7 @@ void encode(struct SBCPM message, char *ptr){
 	ptr += strlen(message.attribute[1].payload);
 }
 
-
+/* Function to convert character buffer into SBCPM structure */
 void decode(struct SBCPM *message, char abuffer[]){
 	uint32_t host,network;
 	char *ptr = &abuffer[0];
@@ -73,7 +74,7 @@ void decode(struct SBCPM *message, char abuffer[]){
 	memcpy(message->attribute[1].payload, ptr, message->attribute[1].length);
 	ptr += message->attribute[1].length;
 }
-
+/* Function to process messages sent from server */
 int patchback(int branch){
 	char abuffer[2048];
 	struct SBCPM message;
@@ -115,7 +116,7 @@ int patchback(int branch){
 		return 0;
 	}
 }
-
+/* Function to populate message structure as per code and send message */
 void dispatch(int branch, enum m_type type, char const *tag){
 	struct SBCPM message;
 	struct SBCPH header;
@@ -151,29 +152,40 @@ void dispatch(int branch, enum m_type type, char const *tag){
 	message.attribute[1] = attribute[1];
 	encode(message,&abuffer[0]);
 	write(branch,abuffer,message.header.length);
-	// if(patchback(branch) == 1) close(branch);
 }
-
+/* Function to initialize and connect client socket to server */
 void nexus(char const *target[]){
-	int joined = 0;
-	struct sockaddr_in rootaddr;
-	struct hostent* myhost;
+	int rv,joined = 0;
+	struct addrinfo hints, *servinfo, *p;
 	fd_set tree, reads;
 	FD_ZERO(&reads);
 	FD_ZERO(&tree);
 	char message[512];
 
-	if((root = socket(AF_INET,SOCK_STREAM,0))==-1) {
-		printf("Connection failed\n");
-		exit(EXIT_FAILURE);
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	if ((rv = getaddrinfo(target[2], target[3], &hints, &servinfo)) != 0) {
+	fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+	exit(EXIT_FAILURE);
 	}
-	bzero(&rootaddr,sizeof(rootaddr));
-	rootaddr.sin_family=AF_INET;
-	myhost = gethostbyname(target[2]);
-	memcpy(&rootaddr.sin_addr.s_addr, myhost->h_addr,myhost->h_length);
-	rootaddr.sin_port = htons(atoi(target[3]));
+	// loop through all the results and connect to the first we can
+	for(p = servinfo; p != NULL; p = p->ai_next) {
+	if ((root = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+	perror("client: socket");
+	continue;
+	}
+	if (connect(root, p->ai_addr, p->ai_addrlen) == -1) {
+	close(root);
+	perror("client: connect");
+	continue;
+	}
+	break;
+	}
 
-	if(connect(root,(struct sockaddr *)&rootaddr,sizeof(rootaddr))==-1){
+	freeaddrinfo(servinfo); // all done with this structure
+
+	if(p == NULL){
 		printf("Connection failed\n");
 		exit(EXIT_FAILURE);
 	}
@@ -211,7 +223,7 @@ void nexus(char const *target[]){
 		}
 	}
 }
-
+/* Function to check if idle time is elapsed */
 void *checkIDLE(void *tag){
 	while(1){
 		pthread_mutex_lock(&lock);
@@ -229,7 +241,7 @@ int main(int argc, char const *argv[]){
 	pthread_mutex_init(&lock, NULL);
 	pthread_create(&thread_id, NULL, checkIDLE, (void*)NULL);
 	if(argc==4) nexus(argv);
-	else printf("Format: %s <username> <server> <port>\n", argv[0]);
+	else {printf("Format: %s <username> <server> <port>\n", argv[0]); exit(EXIT_FAILURE);}
 	pthread_mutex_destroy(&lock);
 	pthread_join(thread_id, NULL);
 	return 0;
