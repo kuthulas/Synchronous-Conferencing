@@ -75,23 +75,8 @@ void decode(struct SBCPM *message, char abuffer[]){
 
 /* Function to initialize and setup server socket to listen */
 void nexus(char const *target[]){
-/*
-	struct sockaddr_in rootaddr;
-	struct hostent* myhost;
-	if ((root = socket(AF_INET,SOCK_STREAM,0)) == -1) exit(EXIT_FAILURE);
-	bzero(&rootaddr,sizeof(rootaddr));
-	rootaddr.sin_family = AF_INET;
-	myhost = gethostbyname(target[1]);
-	memcpy(&rootaddr.sin_addr.s_addr, myhost->h_addr,myhost->h_length);
-	rootaddr.sin_port = htons(atoi(target[2]));
-	if((bind(root, (struct sockaddr*)&rootaddr, sizeof(rootaddr))) == -1) exit(EXIT_FAILURE);
-	if((listen(root, atoi(target[3])))==-1) exit(EXIT_FAILURE);
-	FD_SET(root, &tree);
-*/
-	//int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
+
 	struct addrinfo hints, *servinfo, *p;
-	//struct sockaddr_storage their_addr; // connector's address information
-	//socklen_t sin_size;
 	int rv, yes=1;
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_INET;
@@ -286,19 +271,19 @@ int main(int argc, char const *argv[]){
 				perror("select");
 				exit(EXIT_FAILURE);
 			}
-
+			//loop through existing clients looking for incoming data to be read
 			for(c=0;c<=fdmax;c++){
 				char abuffer[2048];
 				memset(&message, 0, sizeof(message));
 				if(FD_ISSET(c, &reads)){
-					if(c==root){
+					if(c==root){ //accept new client connection
 						socklen_t len = sizeof address;
 						if((branch = accept(root,(struct sockaddr *)&address,&len))!=-1){
 							FD_SET(branch, &tree);
 							if(branch > fdmax) fdmax = branch;
 						}
 					}
-					else{
+					else{ //handle incoming data from a client
 						if((gold=read(c,abuffer,2048))>0){
 							decode(&message,abuffer);
 							if(message.header.type == JOIN) handshake(c,message);
