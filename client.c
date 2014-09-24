@@ -201,17 +201,19 @@ void nexus(char const *target[]){
 				perror("select");
 				exit(4);
 			}
+			//Handle incoming messages from server
 			if(FD_ISSET(root,&reads)) if(patchback(root)==1) exit(EXIT_FAILURE);
+			//Process data from standard input and send message to server
 			if(FD_ISSET(STDIN_FILENO,&reads)){
 				int copper;
 				bzero(message,512);
 				if((copper = read(STDIN_FILENO, message,sizeof(message)))>0){
 					char *key = "JOIN\n";
-					if(joined==0 && strcmp(message,key)==0){
+					if(joined==0 && strcmp(message,key)==0){ // Send intial JOIN to server
 						dispatch(root,JOIN,target[1]);
 						joined = 1;
 					}
-					else if(joined==1) {
+					else if(joined==1) {	// Send message from standard input to server if alreaddy joined
 						dispatch(root,SEND,message);
 						fflush(stdout);
 						tstart = clock();
