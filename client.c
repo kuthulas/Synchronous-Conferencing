@@ -4,6 +4,8 @@
  *
  * ECEN 602: Computer Communications and Networking
  * Texas A&M University
+ *
+ * client.c - Client code for Simple Broadcast Chat Protocol (SBCP) implementation
  **/
 
 #include <stdio.h>
