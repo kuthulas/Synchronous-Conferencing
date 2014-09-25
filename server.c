@@ -1,13 +1,3 @@
-/**
- * Authors:	Kumaran Thulasiraman, Jnanesh Manjunath
- * Created:	Sep 23, 2014
- *
- * ECEN 602: Computer Communications and Networking
- * Texas A&M University
- *
- * server.c - Server code for Simple Broadcast Chat Protocol (SBCP) implementation
- **/
-
 #include <stdio.h>
 #include <netinet/in.h>
 #include <sys/types.h>
@@ -17,46 +7,49 @@
 #include <string.h>
 #include <unistd.h>
 #include "SBCP.h"
+#include <inttypes.h>
 
- int root, nclients=0, mclients, fdmax;
- char buffer[512];
- fd_set tree;
- struct client *clients; // Array to hold connected-client details
+int root, nclients=0, mclients, fdmax;
+char buffer[512];
+fd_set tree;
+struct client *clients;
 
-// Message struct to byte-stream conversion and byte ordering (Integer; 4 byte sets)
- void encode(struct SBCPM message, char *ptr){
- 	uint32_t host,network;
+/* Function to convert SBCPM structure to character buffer */
+void encode(struct SBCPM message, char *ptr){
+	uint32_t host,network;
+	
+	memcpy((char *)&host, (char *)(&message.header), 4);
+	//printf("%" PRIu16 "\n", (uint16_t)host);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
 
- 	memcpy((char *)&host, (char *)(&message.header), 4);
- 	network = htonl(host);
- 	memcpy(ptr, (const char *)&network,4);
- 	ptr += 4;
+	memcpy((char *)&host, (char *)(&message.attribute[0]), 4);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
+	
+	memcpy(ptr, (char *)(&message.attribute[0].payload), strlen(message.attribute[0].payload));
+	ptr += strlen(message.attribute[0].payload);
+	
+	memcpy((char *)&host, (char *)(&message.attribute[1]), 4);
+	network = htonl(host);
+	memcpy(ptr, (const char *)&network,4);
+	ptr += 4;
+	
+	memcpy(ptr, (char *)(&message.attribute[1].payload), strlen(message.attribute[1].payload));
+	ptr += strlen(message.attribute[1].payload);
+}
 
- 	memcpy((char *)&host, (char *)(&message.attribute[0]), 4);
- 	network = htonl(host);
- 	memcpy(ptr, (const char *)&network,4);
- 	ptr += 4;
 
- 	memcpy(ptr, (char *)(&message.attribute[0].payload), strlen(message.attribute[0].payload));
- 	ptr += strlen(message.attribute[0].payload);
+/* Function to convert character buffer into SBCPM structure */
+void decode(struct SBCPM *message, char abuffer[]){
+	uint32_t host,network;
+	char *ptr = &abuffer[0];
 
- 	memcpy((char *)&host, (char *)(&message.attribute[1]), 4);
- 	network = htonl(host);
- 	memcpy(ptr, (const char *)&network,4);
- 	ptr += 4;
-
- 	memcpy(ptr, (char *)(&message.attribute[1].payload), strlen(message.attribute[1].payload));
- 	ptr += strlen(message.attribute[1].payload);
- }
-
-// Byte-stream conversion to message struct and byte ordering
- void decode(struct SBCPM *message, char abuffer[]){
- 	uint32_t host,network;
- 	char *ptr = &abuffer[0];
-
- 	memcpy((char *)&network, (char *)ptr, 4);
- 	host = ntohl(network);
-	message->header.vrsn = host & 0x000001ff; // Bit masking to extract bit-fields
+	memcpy((char *)&network, (char *)ptr, 4);
+	host = ntohl(network);
+	message->header.vrsn = host & 0x000001ff;
 	message->header.type = (host & 0x0000fe00) >> 9;
 	message->header.length = (host & 0xffff0000) >> 16;
 	ptr += 4;
@@ -80,7 +73,7 @@
 	ptr += message->attribute[1].length;
 }
 
-// Creates host socket
+/* Function to initialize and setup server socket to listen */
 void nexus(char const *target[]){
 
 	struct addrinfo hints, *servinfo, *p;
@@ -88,12 +81,12 @@ void nexus(char const *target[]){
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_PASSIVE;
+	hints.ai_flags = AI_PASSIVE; // use my IP
 	if ((rv = getaddrinfo(target[1], target[2], &hints, &servinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
 		exit(EXIT_FAILURE);
 	}
-
+	// loop through all the results and bind to the first we can
 	for(p = servinfo; p != NULL; p = p->ai_next) {
 		if ((root = socket(p->ai_family, p->ai_socktype,p->ai_protocol)) == -1) {
 			perror("server: socket");
@@ -114,7 +107,7 @@ void nexus(char const *target[]){
 		fprintf(stderr, "server: failed to bind\n");
 		exit(EXIT_FAILURE);
 	}
-	freeaddrinfo(servinfo);
+	freeaddrinfo(servinfo); // all done with this structure
 	if (listen(root, atoi(target[3])) == -1) {
 		perror("listen");
 		exit(EXIT_FAILURE);
@@ -122,7 +115,7 @@ void nexus(char const *target[]){
 	FD_SET(root, &tree);
 }
 
-// Check for duplicate in username
+/* Function to check if user with same name already exists */
 int userexists(char user[]){
 	int exists = 0;
 	int u;
@@ -135,7 +128,7 @@ int userexists(char user[]){
 	return exists;
 }
 
-// Cleanup: Remove descriptor from the FD set, and from the client struct array
+/* Function to clear user info */
 void cleanup(int branch){
 	FD_CLR(branch,&tree);
 	int i,j;
@@ -148,7 +141,7 @@ void cleanup(int branch){
 	}
 }
 
-// UNICAST and MULTICAST messaging to connected clients
+/* Function to send msg to intended recipients */
 void msgplex(int branch, struct SBCPM message, enum c_type code){
 	char abuffer[2048];
 	encode(message,&abuffer[0]);
@@ -168,7 +161,7 @@ void msgplex(int branch, struct SBCPM message, enum c_type code){
 	}
 }
 
-// Message packing and dispatching - Handles ACK, NAK, ONLINE, OFFLINE, FWD and IDLE for the server
+/* Function to populate message structure as per code and send message */
 void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 	struct SBCPM message;
 	struct SBCPH header;
@@ -240,7 +233,7 @@ void dispatch(int branch, enum m_type type, int tag, enum c_type code){
 	}
 }
 
-// Manages handshaking with the connected client - Decides on response for JOIN - NAK, ACK & ONLINE
+/* Function to accept or reject new user */
 void handshake(int branch, struct SBCPM message){
 	struct SBCPA attribute = message.attribute[0];;
 	char user[16];
@@ -258,7 +251,6 @@ void handshake(int branch, struct SBCPM message){
 	}
 }
 
-// Main; Handles I/O multiplexing. Session handling logic is here.
 int main(int argc, char const *argv[]){
 	if(argc==4){
 		mclients = atoi(argv[3]);
@@ -279,42 +271,42 @@ int main(int argc, char const *argv[]){
 				perror("select");
 				exit(EXIT_FAILURE);
 			}
-
+			//loop through existing clients looking for incoming data to be read
 			for(c=0;c<=fdmax;c++){
 				char abuffer[2048];
 				memset(&message, 0, sizeof(message));
 				if(FD_ISSET(c, &reads)){
-					if(c==root){ // New client request
+					if(c==root){ //accept new client connection
 						socklen_t len = sizeof address;
 						if((branch = accept(root,(struct sockaddr *)&address,&len))!=-1){
 							FD_SET(branch, &tree);
 							if(branch > fdmax) fdmax = branch;
 						}
 					}
-					else{
-						if((gold=read(c,abuffer,2048))>0){ // Pending messages from a client
+					else{ //handle incoming data from a client
+						if((gold=read(c,abuffer,2048))>0){
 							decode(&message,abuffer);
-							if(message.header.type == JOIN) handshake(c,message); // Initiate handshake upon a JOIN request
-							else if(message.header.type == SEND) { // Forward messages if message type is FWD
+							if(message.header.type == JOIN) handshake(c,message);
+							else if(message.header.type == SEND) {
 								strcpy(buffer, message.attribute[0].payload);
 								buffer[strlen(buffer) - 1] = '\0';
 								dispatch(c,FWD,0,MULTICAST);
 							}
-							else if(message.header.type == IDLE){ // Multicast IDLE messages from a client to all other clients
+							else if(message.header.type == IDLE){
 								int j;
 								for(j=0;j<nclients;j++){
 									if(clients[j].fd==c) dispatch(c,IDLE,j,MULTICAST);
 								}
 							}
 						}
-						else{ // Connection error handling & cleanup
-							if(gold==0){ // Connection gracefully closed by client; initiate OFFLINE multicasting
+						else{
+							if(gold==0){
 								int i;
 								for(i=0;i<nclients;i++) if(clients[i].fd==c){
 									dispatch(0,OFFLINE,i,MULTICAST);
 								}
 							}
-							else perror("recv"); // Connection error
+							else perror("recv");
 							close(c);
 							cleanup(c);
 						}
